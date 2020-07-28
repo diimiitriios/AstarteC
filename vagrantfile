@@ -1,0 +1,106 @@
+# encoding: utf-8
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+require 'yaml'
+require 'ipaddr'
+require 'openssl'
+require 'net/ssh'
+
+current_dir		= File.dirname(File.expand_path(__FILE__))
+configs			= YAML.load_file("#{current_dir}/config.yml")
+vagrant_config	= configs['configs']
+environment		= vagrant_config['use']
+default_ip		= IPAddr.new(vagrant_config['default']['vm']['ip'])
+etc_hosts_value = Array[]
+public_key_value= Array[]
+
+Vagrant.configure("2") do |config|
+
+  puts '-------------------------------------------'
+  
+  vagrant_config[environment].each_with_index do |(hostname, info), i|
+  
+	puts 'hostname: '+hostname
+	
+	box_value = (not(info.nil?)&&info.has_key?('box'))?("#{info['box']}"):("#{vagrant_config['default']['vm']['box']}")
+	puts '  box: '+box_value
+	
+	default_ip = default_ip.succ
+	ip_value = (not(info.nil?)&&info.has_key?('ip'))?("#{info['ip']}"):("#{default_ip}")
+	puts '  ip: '+ip_value
+	
+	etc_hosts_value.push("#{ip_value}"+" "+"#{hostname}")
+	memory_value = (not(info.nil?)&&info.has_key?('memory'))?("#{info['memory']}"):("#{vagrant_config['default']['vm']['memory']}")
+	puts '  memory: '+memory_value
+	
+	cpus_value = (not(info.nil?)&&info.has_key?('cpus'))?("#{info['cpus']}"):("#{vagrant_config['default']['vm']['cpus']}")
+	puts '  cpus: '+cpus_value
+	
+	cpuexecutioncap_value = (not(info.nil?)&&info.has_key?('cpuexecutioncap'))?("#{info['cpuexecutioncap']}"):("#{vagrant_config['default']['vm']['cpuexecutioncap']}")
+	puts '  cpuexecutioncap: '+cpuexecutioncap_value
+	
+	provisioner_shell_value = (not(info.nil?)&&info.has_key?('provisioner')&&info['provisioner'].has_key?('shell'))?("#{info['provisioner']['shell']}"):("#{vagrant_config['default']['vm']['provisioner']['shell']}")
+	(provisioner_shell_value=='true')?(provisioner_shell_value=true):(provisioner_shell_value=false)
+	puts '  provisioner:'
+	puts '    shell: '+provisioner_shell_value.inspect
+	provisioner_ansible_local_value = (not(info.nil?)&&info.has_key?('provisioner')&&info['provisioner'].has_key?('ansible_local'))?("#{info['provisioner']['ansible_local']}"):("#{vagrant_config['default']['vm']['provisioner']['ansible_local']}")
+	(provisioner_ansible_local_value=='true')?(provisioner_ansible_local_value=true):(provisioner_ansible_local_value=false)
+	puts '    ansible_local: '+provisioner_ansible_local_value.inspect
+	
+	if(provisioner_ansible_local_value)
+	  key = OpenSSL::PKey::RSA.generate(2048)
+	  key_value=key.to_s.delete!("\n").sub(/-----BEGIN RSA PRIVATE KEY-----/,'-----BEGIN RSA PRIVATE KEY-----\n').sub(/-----END RSA PRIVATE KEY-----/,'\n-----END RSA PRIVATE KEY-----')
+	  key_type = key.ssh_type
+	  key_data = [ key.to_blob ].pack('m0')
+	  key_openssh_format = "#{key_type} #{key_data} vagrant"
+	  public_key_value.push(key_openssh_format)
+	end
+	
+	puts '-------------------------------------------'
+	
+    config.vm.define hostname do |cfg|
+      cfg.vm.hostname = hostname
+      cfg.vm.box = box_value
+	  puts cfg.vm.box.inspect
+	  cfg.vm.network "private_network", ip: ip_value
+      cfg.vm.provider "virtualbox" do |v|
+          v.memory = memory_value
+          v.cpus = cpus_value
+		  v.customize ["modifyvm", :id, "--cpuexecutioncap", cpuexecutioncap_value]
+      end
+	  
+	  (cfg.vm.provision "shell", path: "provisioning/#{environment}/shell/all.sh")if(provisioner_shell_value)
+	  (cfg.vm.provision "shell", path: "provisioning/#{environment}/shell/#{hostname}.sh")if(provisioner_shell_value)
+	  
+	  if(provisioner_ansible_local_value)
+	    if ( i < vagrant_config[environment].size-1 )
+		  puts 'WARNING: This is not the last VM but it is configured to run ansible_local provisioner.'
+		end
+		cfg.vm.provision "shell", inline: "echo -e '#{key_value}' >> /home/vagrant/.ssh/id_rsa; chown vagrant.vagrant /home/vagrant/.ssh/id_rsa; chmod 600 /home/vagrant/.ssh/id_rsa"
+	    cfg.vm.provision "ansible_local" do |ansible|
+	      ansible.provisioning_path = "/vagrant/provisioning/#{environment}/ansible_local"
+          ansible.playbook = "main.yml"
+	      ansible.inventory_path = "hosts"
+	      ansible.limit = "all"
+        end
+	  end
+	  
+    end
+  end
+  
+  for item in etc_hosts_value 
+    config.vm.provision "shell" do |s|
+      s.inline = "echo $1 $2 >> /etc/hosts"
+      s.args   = "#{item}"
+    end
+  end
+  
+  for item in public_key_value 
+    config.vm.provision "shell" do |s|
+      s.inline = "echo -e $1 $2 $3 >> /home/vagrant/.ssh/authorized_keys"
+      s.args   = "#{item}"
+    end
+  end
+  
+end

@@ -1,0 +1,7 @@
+---
+- name: Create sample file
+  template:
+    src: ansible_local.txt
+    dest: /home/vagrant
+    owner: vagrant
+    group: vagrant

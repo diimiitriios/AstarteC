@@ -1,0 +1,6 @@
+[groupA]
+B1	ansible_connection=ssh	ansible_user=vagrant
+
+[groupB]
+B2	ansible_connection=ssh	ansible_user=vagrant
+B3	ansible_connection=ssh	ansible_user=vagrant

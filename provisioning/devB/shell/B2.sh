@@ -1,0 +1,1 @@
+echo "This file is managed by shell provisioner and will run to a single box with provisioner.shell = true" > /home/vagrant/shell_single.txt

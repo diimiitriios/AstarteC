@@ -1,0 +1,31 @@
+---
+configs:
+  use: 'devB'
+  default:
+    vm:
+      box: 'centos/7'
+      ip: '192.168.50.10'
+      memory: '512'
+      cpus: '1'
+      cpuexecutioncap: '50'
+      provisioner:
+        shell: false
+        ansible_local: false
+  devA:
+    - A1
+    - A2
+    - A3
+  devB:
+    B1:
+      box: 'minimal/trusty64'
+      memory: '256'
+    B2:
+      ip: '192.168.50.112'
+      provisioner:
+        shell: true
+    B3:
+    B4:
+      cpus: '2'
+      cpuexecutioncap: '75'
+      provisioner:
+        ansible_local: true
